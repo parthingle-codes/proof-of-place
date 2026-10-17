@@ -5,6 +5,7 @@ import { CONFIG, generateContent, probe, GemmaError } from "./gemma.js";
 import { buildAnalyzePrompt, CATEGORIES } from "./prompts.js";
 import { extractJson, normalizeAnalysis, composeTicket } from "./schema.js";
 import { DEMO_ANALYSIS } from "./demo.js";
+import { addTicket, listEntries, DEMO_NOTICE } from "./queue.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -21,18 +22,25 @@ const upload = multer({
 
 const sendError = (res, err) => {
   const isGemma = err instanceof GemmaError;
+  // Express body-parse / multer errors carry a 4xx status; anything else is an
+  // internal failure and must NOT be reported as the user's bad input.
+  const clientStatus = Number(err?.status || err?.statusCode || 0);
+  const isClientError = clientStatus >= 400 && clientStatus < 500;
   const status = isGemma
     ? err.kind === "not_configured"
       ? 503
       : err.kind === "timeout" || err.kind === "network"
         ? 504
         : 502
-    : 400;
+    : isClientError
+      ? 400
+      : 500;
+  const kind = isGemma ? err.kind : isClientError ? "bad_input" : "internal";
   console.error(`[error] ${err.message}${err.detail ? ` :: ${err.detail}` : ""}`);
   res.status(status).json({
     error: err.message,
-    kind: isGemma ? err.kind : "bad_input",
-    detail: isGemma && err.detail ? String(err.detail).slice(0, 400) : undefined,
+    kind,
+    detail: err.detail ? String(err.detail).slice(0, 400) : undefined,
   });
 };
 
@@ -132,6 +140,12 @@ app.post("/api/ticket", (req, res) => {
         kind: "bad_input",
       });
     }
+    if (typeof analysis !== "object" || Array.isArray(analysis)) {
+      return res.status(400).json({
+        error: "Analysis payload was not an object.",
+        kind: "bad_input",
+      });
+    }
     const ticket = composeTicket({
       analysis: normalizeAnalysis(analysis, input),
       input: {
@@ -141,11 +155,39 @@ app.post("/api/ticket", (req, res) => {
         context: String(input.context || ""),
       },
       answers: Array.isArray(answers) ? answers : [],
+      meta: { model: CONFIG.model, sample: CONFIG.demoMode },
     });
     res.json({ ticket });
   } catch (err) {
     sendError(res, err);
   }
+});
+
+/**
+ * Campus Maintenance Desk - DEMONSTRATION queue (see server/queue.js).
+ * Clearly labelled as a demo: it never contacts a college system or person.
+ */
+app.post("/api/queue", (req, res) => {
+  try {
+    const ticket = req.body?.ticket;
+    if (!ticket || typeof ticket !== "object" || !ticket.issue_title) {
+      return res.status(400).json({
+        error: "No ticket supplied for the demonstration queue.",
+        kind: "bad_input",
+      });
+    }
+    const result = addTicket(ticket);
+    console.log(
+      `[queue] demo entry #${result.entry.queue_id}: ${result.entry.issue_title}`
+    );
+    res.json({ ...result, demo: true, real_system: false, notice: DEMO_NOTICE });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get("/api/queue", (_req, res) => {
+  res.json(listEntries());
 });
 
 // Multer and body-parser errors
@@ -156,13 +198,40 @@ app.use((err, _req, res, _next) => {
       kind: "bad_input",
     });
   }
+  if (err?.message === "Unexpected file field") {
+    return res.status(400).json({
+      error: 'Only the "image" field may contain a file upload.',
+      kind: "bad_input",
+    });
+  }
   sendError(res, err instanceof Error ? err : new Error(String(err)));
 });
 
 const port = Number(process.env.PORT || 8787);
-app.listen(port, () => {
-  console.log(`Proof-of-Place API on http://localhost:${port}`);
-  console.log(`  model:  ${CONFIG.model}`);
-  console.log(`  key:    ${CONFIG.apiKey ? "configured (hidden)" : "NOT SET"}`);
-  console.log(`  mode:   ${CONFIG.demoMode ? "DEMO (sample data, no model calls)" : "live"}`);
-});
+
+/**
+ * Start with EADDRINUSE recovery: `node --watch` can restart this process while
+ * the previous instance still holds the socket, which would otherwise crash the
+ * dev server with an unhandled 'error' event.
+ */
+function start(attempt = 0) {
+  const server = app.listen(port, () => {
+    console.log(`Proof-of-Place API on http://localhost:${port}`);
+    console.log(`  model:  ${CONFIG.model}`);
+    console.log(`  key:    ${CONFIG.apiKey ? "configured (hidden)" : "NOT SET"}`);
+    console.log(
+      `  mode:   ${CONFIG.demoMode ? "DEMO (sample data, no model calls)" : "live"}`
+    );
+  });
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE" && attempt < 40) {
+      console.warn(`port ${port} busy, retrying (${attempt + 1}/40)...`);
+      setTimeout(() => start(attempt + 1), 500);
+      return;
+    }
+    console.error(`Failed to start server on port ${port}: ${err.message}`);
+    process.exit(1);
+  });
+}
+
+start();

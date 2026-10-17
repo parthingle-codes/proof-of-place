@@ -1,6 +1,19 @@
 import { useState } from "react";
 import { makeTicket, ApiError } from "../api";
-import type { Analysis, Answer, ComplaintInput } from "../types";
+import type { Analysis, Answer, ComplaintInput, Ticket } from "../types";
+import {
+  IconAlert,
+  IconArrowRight,
+  IconEye,
+  IconFlag,
+  IconHelp,
+  IconInfo,
+  IconList,
+  IconQuestion,
+  IconSearch,
+  IconSpark,
+  IconUser,
+} from "../components/icons";
 
 interface Props {
   input: ComplaintInput;
@@ -9,7 +22,7 @@ interface Props {
   setAnswers: (a: Answer[]) => void;
   isSample: boolean;
   onBack: () => void;
-  onGenerated: (t: import("../types").Ticket) => void;
+  onGenerated: (t: Ticket) => void;
 }
 
 export default function IntakeScreen({
@@ -25,8 +38,7 @@ export default function IntakeScreen({
   const [busy, setBusy] = useState(false);
 
   const setAnswer = (i: number, value: string) => {
-    const next = answers.map((a, idx) => (idx === i ? { ...a, answer: value } : a));
-    setAnswers(next);
+    setAnswers(answers.map((a, idx) => (idx === i ? { ...a, answer: value } : a)));
   };
 
   const generate = async () => {
@@ -36,8 +48,7 @@ export default function IntakeScreen({
       const t = await makeTicket(analysis, input, answers);
       onGenerated(t);
     } catch (e) {
-      const err = e as ApiError;
-      setError(err.message);
+      setError((e as ApiError).message);
     } finally {
       setBusy(false);
     }
@@ -48,26 +59,47 @@ export default function IntakeScreen({
   return (
     <>
       <div className="card">
-        <h2>AI-assisted intake</h2>
-        <p className="sub">
-          Gemma 4 read your complaint{input && analysis.observed_facts.length ? " and photo" : ""}
-          {" "}and produced the following. Everything marked <span className="badge ai">AI</span> is
-          a suggestion - correct it if it is wrong.
-        </p>
+        <div className="card-head">
+          <span className="card-icon violet">
+            <IconSpark size={19} />
+          </span>
+          <div>
+            <h2>AI-assisted intake</h2>
+            <p className="sub">
+              {isSample
+                ? "Sample analysis produced locally in DEMO_MODE (no model ran). Everything below is example data, not Gemma 4 output. "
+                : "Gemma 4 read your complaint"}
+              {!isSample && analysis.observed_facts.length ? " and photo" : ""}
+              {!isSample && " and produced the following. "}
+              Everything marked <span className="badge ai">AI</span> is a suggestion - correct it
+              if it is wrong.
+            </p>
+          </div>
+        </div>
 
         {isSample && (
           <div className="notice sample">
-            <strong>Sample data.</strong> This analysis was generated locally for demonstration
-            and is <strong>not</strong> output from Gemma 4.
+            <span className="n-ico">
+              <IconInfo size={17} />
+            </span>
+            <span>
+              <strong>Sample data.</strong> This analysis was generated locally for demonstration
+              and is <strong>not</strong> output from Gemma 4.
+            </span>
           </div>
         )}
 
         {analysis.urgency_indicators.length > 0 && (
           <div className="notice warn">
-            <strong>Flagged for human review - not a verdict.</strong> Possible urgency signs were
-            noticed. This assistant cannot assess safety: if there is exposed wiring, flooding, gas
-            smell or immediate risk to people, use your institution's emergency reporting channel
-            now and do not wait for this ticket.
+            <span className="n-ico">
+              <IconAlert size={17} />
+            </span>
+            <span>
+              <strong>Flagged for human review - not a verdict.</strong> Possible urgency signs
+              were noticed. This assistant cannot assess safety: if there is exposed wiring,
+              flooding, gas smell or immediate risk to people, use your institution's emergency
+              reporting channel now and do not wait for this ticket.
+            </span>
           </div>
         )}
 
@@ -76,13 +108,18 @@ export default function IntakeScreen({
             Suggested category <span className="badge ai">AI</span>
           </h3>
           <div className="tag-row">
-            <strong style={{ fontSize: "1.05rem" }}>{analysis.category}</strong>
+            <span className="category-pill">{analysis.category}</span>
           </div>
-          <span className="hint">Changeable later on the ticket - the maintenance team's taxonomy may differ.</span>
+          <span className="hint">
+            Changeable later on the ticket - the maintenance team's taxonomy may differ.
+          </span>
         </div>
 
         <div className="block">
           <h3>
+            <span className="h-ico">
+              <IconList size={14} />
+            </span>
             Problem summary <span className="badge ai">AI</span>
           </h3>
           <p>{analysis.problem_summary}</p>
@@ -90,6 +127,9 @@ export default function IntakeScreen({
 
         <div className="block">
           <h3>
+            <span className="h-ico">
+              <IconEye size={14} />
+            </span>
             Observed from your photo <span className="badge ai">AI</span>
           </h3>
           {analysis.observed_facts.length ? (
@@ -99,12 +139,17 @@ export default function IntakeScreen({
               ))}
             </ul>
           ) : (
-            <p className="empty">Nothing extracted - either no photo was supplied or nothing relevant was visible.</p>
+            <p className="empty">
+              Nothing extracted - either no photo was supplied or nothing relevant was visible.
+            </p>
           )}
         </div>
 
         <div className="block">
           <h3>
+            <span className="h-ico">
+              <IconUser size={14} />
+            </span>
             What you reported <span className="badge user">User</span>
           </h3>
           <ul>
@@ -116,6 +161,9 @@ export default function IntakeScreen({
 
         <div className="block">
           <h3>
+            <span className="h-ico">
+              <IconSearch size={14} />
+            </span>
             Missing information <span className="badge ai">AI</span>
           </h3>
           {analysis.missing_information.length ? (
@@ -132,6 +180,9 @@ export default function IntakeScreen({
         {analysis.hypotheses.length > 0 && (
           <div className="block">
             <h3>
+              <span className="h-ico">
+                <IconHelp size={14} />
+              </span>
               Possible causes - hypotheses, not facts <span className="badge ai">AI</span>
             </h3>
             <ul>
@@ -145,6 +196,9 @@ export default function IntakeScreen({
         {analysis.uncertainties.length > 0 && (
           <div className="block">
             <h3>
+              <span className="h-ico">
+                <IconInfo size={14} />
+              </span>
               Uncertainties <span className="badge ai">AI</span>
             </h3>
             <ul>
@@ -157,14 +211,26 @@ export default function IntakeScreen({
       </div>
 
       <div className="card">
-        <h2>Answer what matters</h2>
-        <p className="sub">
-          Only the most useful questions were asked ({answered} of {answers.length} answered).
-          Skip anything you do not know.
-        </p>
+        <div className="card-head">
+          <span className="card-icon">
+            <IconQuestion size={19} />
+          </span>
+          <div>
+            <h2>Answer what matters</h2>
+            <p className="sub">
+              Only the most useful questions were asked ({answered} of {answers.length} answered).
+              Skip anything you do not know.
+            </p>
+          </div>
+        </div>
 
         {answers.length === 0 && (
-          <div className="notice">The assistant did not need to ask anything further.</div>
+          <div className="notice">
+            <span className="n-ico">
+              <IconInfo size={17} />
+            </span>
+            <span>The assistant did not need to ask anything further.</span>
+          </div>
         )}
 
         {answers.map((a, i) => (
@@ -185,25 +251,40 @@ export default function IntakeScreen({
 
         {error && (
           <div className="notice error" role="alert">
-            <strong>Problem:</strong> {error}
+            <span className="n-ico">
+              <IconAlert size={17} />
+            </span>
+            <span>
+              <strong>Problem:</strong> {error}
+            </span>
           </div>
         )}
 
         <div className="actions">
           <button className="btn primary" onClick={generate} disabled={busy}>
+            <span className="ico">
+              <IconArrowRight size={16} />
+            </span>
             {busy ? "Preparing…" : "Generate maintenance ticket"}
           </button>
-          <button className="btn" onClick={onBack} disabled={busy}>
+          <button className="btn ghost" onClick={onBack} disabled={busy}>
             Back to complaint
           </button>
         </div>
 
         {busy && (
-          <div className="loading">
+          <div className="loading" aria-live="polite">
             <span className="spinner" />
             Combining your answers with the analysis…
+            <span className="bar" />
           </div>
         )}
+
+        <div className="divider-label">What happens next</div>
+        <p className="hint" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <IconFlag size={15} /> Your answers are merged deterministically with the analysis -
+          no second model call, no invention.
+        </p>
       </div>
     </>
   );

@@ -7,9 +7,14 @@
  */
 
 import { CATEGORIES } from "./prompts.js";
+import { GemmaError } from "./gemma.js";
 
 const MAX_STR = 600;
 const MAX_ARR = 8;
+const MAX_TITLE = 90;
+
+/** Model-output failures are the provider's problem (502), not the user's. */
+const modelError = (message) => new GemmaError(message, { kind: "malformed" });
 
 const str = (v) => {
   if (typeof v !== "string") return "";
@@ -31,10 +36,47 @@ const arr = (v) => {
   return out;
 };
 
+/** Close a JSON object that was cut off mid-generation (truncation). */
+function repairTruncated(text) {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  let s = text.slice(start).replace(/,\s*$/, "");
+
+  const stack = [];
+  let inStr = false;
+  let esc = false;
+  for (const ch of s) {
+    if (esc) {
+      esc = false;
+      continue;
+    }
+    if (ch === "\\") {
+      esc = true;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = !inStr;
+      continue;
+    }
+    if (inStr) continue;
+    if (ch === "{") stack.push("}");
+    else if (ch === "[") stack.push("]");
+    else if (ch === "}" || ch === "]") stack.pop();
+  }
+  if (inStr) s = s.replace(/,\s*$/, "") + '"';
+  else s = s.replace(/,\s*$/, "");
+  while (stack.length) s += stack.pop();
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
 /** Pull the first parseable JSON object out of a model response. */
 export function extractJson(text) {
   if (typeof text !== "string" || !text.trim()) {
-    throw new Error("The model returned an empty response.");
+    throw modelError("The model returned an empty response.");
   }
   let t = text.trim();
   // strip ``` fences
@@ -43,26 +85,36 @@ export function extractJson(text) {
   try {
     return JSON.parse(t);
   } catch {
-    /* fall through to brace extraction */
+    /* fall through */
   }
   const start = t.indexOf("{");
   const end = t.lastIndexOf("}");
   if (start !== -1 && end > start) {
     try {
       return JSON.parse(t.slice(start, end + 1));
-    } catch (err) {
-      throw new Error(
-        `The model response was not valid JSON and could not be repaired: ${err.message}`
-      );
+    } catch {
+      /* fall through */
     }
   }
-  throw new Error("The model did not return a JSON object.");
+  // Response may have been truncated mid-object - try to close it off.
+  const repaired = repairTruncated(t);
+  if (repaired) return repaired;
+
+  throw modelError("The model did not return a JSON object.");
 }
 
-/** Coerce unknown model output into a well-formed AnalysisResult. */
+/**
+ * Coerce unknown model output into a well-formed AnalysisResult.
+ * Every failure here is a model-output problem, reported as `malformed` (502)
+ * rather than as the user's bad input.
+ */
 export function normalizeAnalysis(raw, input = {}) {
+  // A model sometimes wraps the object in a single-element array.
+  if (Array.isArray(raw) && raw.length === 1 && raw[0] && typeof raw[0] === "object") {
+    raw = raw[0];
+  }
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    throw new Error("Analysis payload was not an object.");
+    throw modelError("The model did not return a JSON object.");
   }
 
   let category = str(raw.category);
@@ -76,9 +128,15 @@ export function normalizeAnalysis(raw, input = {}) {
 
   const questions = arr(raw.suggested_follow_up_questions).slice(0, 3);
 
+  const title = str(raw.issue_title) || deriveTitle(input.description);
+  const issue_title =
+    title.length > MAX_TITLE
+      ? title.slice(0, MAX_TITLE - 1).replace(/\s+\S*$/, "") + "…"
+      : title;
+
   const analysis = {
     category,
-    issue_title: str(raw.issue_title) || deriveTitle(input.description),
+    issue_title,
     problem_summary: str(raw.problem_summary) || str(input.description),
     observed_facts: arr(raw.observed_facts),
     user_reported_details: arr(raw.user_reported_details),
@@ -99,9 +157,6 @@ export function normalizeAnalysis(raw, input = {}) {
       analysis.missing_information,
       deriveQuestions(input)
     );
-  }
-  if (!analysis.missing_information.length && input.location) {
-    analysis.missing_information = [];
   }
   return analysis;
 }
@@ -139,8 +194,9 @@ function deriveQuestions(input) {
 
 /**
  * Deterministic ticket builder. Pure function of validated analysis + user input.
+ * @param {{analysis: object, input: object, answers?: array, meta?: {model?: string, sample?: boolean}}} args
  */
-export function composeTicket({ analysis, input, answers = [] }) {
+export function composeTicket({ analysis, input, answers = [], meta = {} }) {
   const answerList = answers
     .map((a) => ({
       question: str(a.question),
@@ -171,10 +227,15 @@ export function composeTicket({ analysis, input, answers = [] }) {
     urgency_indicators: analysis.urgency_indicators,
     uncertainties: analysis.uncertainties,
     provenance: {
-      model: "Gemma 4",
-      generated_note:
-        "AI-generated fields are suggestions. The reporter reviewed and edited this ticket before export.",
+      prepared_in: "Proof-of-Place",
+      model: meta.model || "Gemma 4",
+      sample: !!meta.sample,
+      generated_note: meta.sample
+        ? "SAMPLE DATA generated locally in DEMO_MODE - NOT produced by Gemma 4."
+        : "AI-generated fields are suggestions. Review, edit and approve them before export.",
       submitted: false,
+      received_by_college_staff: false,
+      handoff_status: "prepared_not_sent",
     },
     generated_at: new Date().toISOString(),
   };

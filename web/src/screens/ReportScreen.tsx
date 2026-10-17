@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { analyze, ApiError } from "../api";
 import { CATEGORIES, type Analysis, type ComplaintInput, type Health } from "../types";
+import { IconAlert, IconCamera, IconPlay, IconSpark } from "../components/icons";
 
 interface Props {
   input: ComplaintInput;
@@ -98,12 +99,38 @@ export default function ReportScreen({
   const blocked = health?.mode === "live" && !health.ok;
 
   return (
-    <div className="card">
-      <h2>Report an issue</h2>
-      <p className="sub">
-        Give whatever you know. Nothing here is mandatory except the description - the assistant
-        will ask for anything important that is missing.
-      </p>
+    <>
+      <div className="hero">
+        <h2>Report it once. Properly.</h2>
+        <p>
+          Write the problem in your own words - no technical terms needed, no fields you don't
+          know. Gemma 4 reads what you give it, works out what's missing, and asks only the
+          questions a technician would actually need answered.
+        </p>
+        <div className="flow">
+          <span className="flow-chip">Your complaint</span>
+          <span className="flow-arrow">→</span>
+          <span className="flow-chip">Gemma 4 analysis</span>
+          <span className="flow-arrow">→</span>
+          <span className="flow-chip">Smart follow-ups</span>
+          <span className="flow-arrow">→</span>
+          <span className="flow-chip">Maintenance ticket</span>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <span className="card-icon">
+            <IconCamera size={19} />
+          </span>
+          <div>
+            <h2>Report an issue</h2>
+            <p className="sub">
+              Give whatever you know. Nothing here is mandatory except the description - the
+              assistant will ask for anything important that is missing.
+            </p>
+          </div>
+        </div>
 
       <div className="field">
         <label htmlFor="photo">Photo <span className="hint">(optional)</span></label>
@@ -120,17 +147,23 @@ export default function ReportScreen({
             tabIndex={0}
             onKeyDown={(e) => e.key === "Enter" && fileRef.current?.click()}
           >
-            Click to choose, or drop an image here.
-            <div className="hint">JPEG, PNG or WebP - up to 6 MB. Downscaled in your browser.</div>
+            <div className="drop-ico">
+              <IconCamera size={20} />
+            </div>
+            <div className="drop-main">Click to choose, or drop an image here</div>
+            <div className="hint">JPEG, PNG or WebP · up to 6 MB · downscaled in your browser</div>
           </div>
         ) : (
           <div className="preview">
             {preview && <img src={preview} alt="Uploaded evidence preview" />}
             <div className="meta">
-              <strong>{image.name}</strong>
-              <div>{(image.size / 1024).toFixed(0)} KB · {image.type}</div>
+              <div className="name">{image.name}</div>
+              <div>
+                {(image.size / 1024).toFixed(0)} KB · {image.type}
+              </div>
               <button
-                className="btn small"
+                className="btn small danger-ghost"
+                style={{ marginTop: 6 }}
                 onClick={() => {
                   setImage(null);
                   setPreview(null);
@@ -208,32 +241,52 @@ export default function ReportScreen({
 
       {error && (
         <div className="notice error" role="alert">
-          <strong>Problem:</strong> {error}
+          <span className="n-ico">
+            <IconAlert size={17} />
+          </span>
+          <span>
+            <strong>Problem:</strong> {error}
+          </span>
         </div>
       )}
 
       <div className="actions">
         <button className="btn primary" onClick={submit} disabled={busy}>
+          <span className="ico">
+            <IconSpark size={16} />
+          </span>
           {busy ? "Analysing…" : "Analyze complaint"}
         </button>
-        <button className="btn" onClick={loadSample} disabled={busy}>
+        <button className="btn ghost" onClick={loadSample} disabled={busy}>
+          <span className="ico">
+            <IconPlay size={15} />
+          </span>
           Load sample complaint
         </button>
       </div>
 
       {busy && (
-        <div className="loading">
+        <div className="loading" aria-live="polite">
           <span className="spinner" />
-          Sending the complaint{image ? " and photo" : ""} to Gemma 4 for analysis…
+          {health?.mode === "demo"
+            ? "DEMO_MODE: producing labelled sample data (no model call is made)…"
+            : `Sending the complaint${image ? " and photo" : ""} to Gemma 4 for analysis…`}
+          <span className="bar" />
         </div>
       )}
 
       {blocked && (
         <div className="notice warn" style={{ marginTop: 14 }}>
-          Heads up: the model is currently not reachable (see the banner above), so{" "}
-          <strong>Analyze complaint</strong> will return an error instead of an analysis.
+          <span className="n-ico">
+            <IconAlert size={17} />
+          </span>
+          <span>
+            Heads up: the model is currently not reachable (see the banner above), so{" "}
+            <strong>Analyze complaint</strong> will return an error instead of an analysis.
+          </span>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

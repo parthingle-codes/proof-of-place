@@ -12,7 +12,7 @@ export const CONFIG = {
   apiKey: process.env.GEMINI_API_KEY || "",
   model: process.env.GEMMA_MODEL || "gemma-4-26b-a4b-it",
   baseUrl: process.env.GEMMA_API_BASE || "https://generativelanguage.googleapis.com/v1beta",
-  timeoutMs: Number(process.env.GEMMA_TIMEOUT_MS || 60000),
+  timeoutMs: Number(process.env.GEMMA_TIMEOUT_MS || 90000),
   demoMode: String(process.env.DEMO_MODE || "").toLowerCase() === "true",
 };
 
@@ -29,7 +29,8 @@ export class GemmaError extends Error {
 function classify(status, bodyText, bodyJson) {
   const msg =
     bodyJson?.error?.message || bodyText?.slice(0, 300) || `HTTP ${status}`;
-  if (status === 401 || status === 403) {
+  // Google reports invalid keys as HTTP 400, not 401 - classify by message.
+  if (status === 401 || status === 403 || /api key not valid|API_KEY_INVALID/i.test(msg)) {
     return new GemmaError(
       "Authentication failed: the configured GEMINI_API_KEY was rejected. Check the key in .env.",
       { status, kind: "auth", detail: msg }
@@ -78,9 +79,8 @@ export async function generateContent(contents) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CONFIG.timeoutMs);
 
-  let res;
-  try {
-    res = await fetch(url, {
+  const postJson = () =>
+    fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -90,12 +90,24 @@ export async function generateContent(contents) {
         contents,
         generationConfig: {
           temperature: 0.2,
-          maxOutputTokens: 2048,
+          // Generous budget: a truncated JSON object was a plausible cause of
+          // unparseable replies (thinking text also consumes the budget).
+          maxOutputTokens: 4096,
           responseMimeType: "application/json",
         },
       }),
       signal: controller.signal,
     });
+
+  let res;
+  try {
+    res = await postJson(url, contents);
+    if (res.status >= 500) {
+      // Provider-side transient failure: one retry, same model, no fallback.
+      const retryDelay = 1500;
+      await new Promise((r) => setTimeout(r, retryDelay));
+      res = await postJson(url, contents);
+    }
   } catch (err) {
     if (err.name === "AbortError") {
       throw new GemmaError(
@@ -103,6 +115,7 @@ export async function generateContent(contents) {
         { kind: "timeout" }
       );
     }
+    if (err instanceof GemmaError) throw err;
     throw new GemmaError(`Could not reach the inference endpoint: ${err.message}`, {
       kind: "network",
       detail: String(err),

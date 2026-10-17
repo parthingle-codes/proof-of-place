@@ -61,7 +61,15 @@ export interface Ticket {
   suggested_next_action: string;
   urgency_indicators: string[];
   uncertainties: string[];
-  provenance: { model: string; generated_note: string; submitted: boolean };
+  provenance: {
+    prepared_in: string;
+    model: string;
+    sample?: boolean;
+    generated_note: string;
+    submitted: boolean;
+    received_by_college_staff: boolean;
+    handoff_status: string;
+  };
   generated_at: string;
 }
 
@@ -73,4 +81,34 @@ export interface Health {
   kind?: string;
   categories: string[];
   privacy: string;
+}
+
+/** Campus Maintenance Desk - DEMONSTRATION queue (never a real college system). */
+export interface QueueEntry {
+  queue_id: number;
+  added_at: string;
+  demo: boolean;
+  real_system: boolean;
+  received_by_college_staff: boolean;
+  status: string;
+  issue_title: string;
+  category: string;
+  location: string;
+  ticket: Ticket;
+}
+
+export interface QueueResponse {
+  entry: QueueEntry;
+  queue_size: number;
+  demo: boolean;
+  real_system: boolean;
+  notice: string;
+}
+
+export interface QueueListResponse {
+  demo: boolean;
+  real_system: boolean;
+  notice: string;
+  queue_size: number;
+  entries: QueueEntry[];
 }

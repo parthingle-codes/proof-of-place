@@ -4,6 +4,8 @@ import type { Analysis, Answer, ComplaintInput, Health, Ticket } from "./types";
 import ReportScreen from "./screens/ReportScreen";
 import IntakeScreen from "./screens/IntakeScreen";
 import TicketScreen from "./screens/TicketScreen";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { IconAlert, IconInfo, IconWrench } from "./components/icons";
 
 type Step = "report" | "intake" | "ticket";
 
@@ -62,10 +64,17 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="masthead">
-        <div>
-          <h1 className="brand">Proof-of-Place</h1>
-          <p className="tagline">From vague complaints to maintenance-ready tickets.</p>
+      <header className="topbar">
+        <div className="lockup">
+          <div className="mark">
+            <IconWrench size={22} />
+          </div>
+          <div>
+            <h1 className="brand">
+              Proof<em>-of-</em>Place
+            </h1>
+            <p className="tagline">From vague complaints to maintenance-ready tickets.</p>
+          </div>
         </div>
         <div className="status" title={health?.message || healthError || ""}>
           <span className={`dot ${status.cls}`} />
@@ -89,23 +98,39 @@ export default function App() {
 
       {health && !health.ok && health.mode === "live" && (
         <div className="notice warn">
-          <strong>Model integration not verified.</strong> {health.message}
-          {" "}The rest of the workflow is usable; analysis calls will fail until this is fixed.
+          <span className="n-ico">
+            <IconAlert size={17} />
+          </span>
+          <span>
+            <strong>Model integration not verified.</strong> {health.message}
+            {" "}The rest of the workflow is usable; analysis calls will fail until this is fixed.
+          </span>
         </div>
       )}
       {health?.mode === "demo" && (
         <div className="notice sample">
-          <strong>DEMO_MODE is on.</strong> {health.message} Every analysis below is visibly
-          marked as sample data and is <em>not</em> output from Gemma 4.
+          <span className="n-ico">
+            <IconInfo size={17} />
+          </span>
+          <span>
+            <strong>DEMO_MODE is on.</strong> {health.message} Every analysis below is visibly
+            marked as sample data and is <em>not</em> output from Gemma 4.
+          </span>
         </div>
       )}
       {healthError && (
         <div className="notice error">
-          <strong>Cannot reach the API server.</strong> {healthError} Start it with{" "}
-          <code>npm run dev</code>.
+          <span className="n-ico">
+            <IconAlert size={17} />
+          </span>
+          <span>
+            <strong>Cannot reach the API server.</strong> {healthError} Start it with{" "}
+            <code>npm run dev</code>.
+          </span>
         </div>
       )}
 
+      <ErrorBoundary key={step}>
       {step === "report" && (
         <ReportScreen
           input={input}
@@ -147,6 +172,7 @@ export default function App() {
           onRestart={reset}
         />
       )}
+      </ErrorBoundary>
 
       <footer className="foot">
         <p>
